@@ -178,7 +178,7 @@ def safe_get_bool_env(env_var: str, default: bool) -> bool:
 
 def validate_and_create_path(path: str) -> str:
     """Validate and create a directory path, ensuring it's writable.
-    
+
     This function ensures that the specified directory path exists and is writable.
     It performs several checks and has a retry mechanism to handle potential race
     conditions, especially when running in environments like Claude Desktop where
@@ -188,7 +188,7 @@ def validate_and_create_path(path: str) -> str:
         # Convert to absolute path and expand user directory if present (e.g. ~)
         abs_path = os.path.abspath(os.path.expanduser(path))
         logger.debug(f"Validating path: {abs_path}")
-        
+
         # Create directory and all parents if they don't exist
         try:
             os.makedirs(abs_path, exist_ok=True)
@@ -196,30 +196,30 @@ def validate_and_create_path(path: str) -> str:
         except Exception as e:
             logger.error(f"Error creating directory {abs_path}: {str(e)}")
             raise PermissionError(f"Cannot create directory {abs_path}: {str(e)}")
-            
+
         # Add small delay to prevent potential race conditions on macOS during initial write test
         time.sleep(0.1)
-        
+
         # Verify that the path exists and is a directory
         if not os.path.exists(abs_path):
             logger.error(f"Path does not exist after creation attempt: {abs_path}")
             raise PermissionError(f"Path does not exist: {abs_path}")
-        
+
         if not os.path.isdir(abs_path):
             logger.error(f"Path is not a directory: {abs_path}")
             raise PermissionError(f"Path is not a directory: {abs_path}")
-        
+
         # Write test with retry mechanism
         max_retries = 3
         retry_delay = 0.5
         test_file = os.path.join(abs_path, '.write_test')
-        
+
         for attempt in range(max_retries):
             try:
                 logger.debug(f"Testing write permissions (attempt {attempt+1}/{max_retries}): {test_file}")
                 with open(test_file, 'w') as f:
                     f.write('test')
-                
+
                 if os.path.exists(test_file):
                     logger.debug(f"Successfully wrote test file: {test_file}")
                     os.remove(test_file)
@@ -236,7 +236,7 @@ def validate_and_create_path(path: str) -> str:
                 else:
                     logger.error(f"All write test attempts failed for {abs_path}")
                     raise PermissionError(f"Directory {abs_path} is not writable: {str(e)}")
-        
+
         return abs_path
     except Exception as e:
         logger.error(f"Error validating path {path}: {str(e)}")
@@ -248,7 +248,7 @@ def get_base_directory() -> str:
     # First choice: Environment variable
     if base_dir := os.getenv('MCP_MEMORY_BASE_DIR'):
         return validate_and_create_path(base_dir)
-    
+
     # Second choice: Local app data directory
     home = str(Path.home())
     if sys.platform == 'darwin':  # macOS
@@ -257,13 +257,13 @@ def get_base_directory() -> str:
         base = os.path.join(os.getenv('LOCALAPPDATA', ''), 'mcp-memory')
     else:  # Linux and others
         base = os.path.join(home, '.local', 'share', 'mcp-memory')
-    
+
     return validate_and_create_path(base)
 
 # Initialize paths
 try:
     BASE_DIR = get_base_directory()
-    
+
     # Try multiple environment variable names for backups path
     backups_path = None
     for env_var in ['MCP_MEMORY_BACKUPS_PATH', 'mcpMemoryBackupsPath']:
@@ -271,7 +271,7 @@ try:
             backups_path = path
             logger.info(f"Using {env_var}={path} for backups path")
             break
-    
+
     # If no environment variable is set, use the default path
     if not backups_path:
         backups_path = os.path.join(BASE_DIR, 'backups')
@@ -303,17 +303,12 @@ except (ImportError, AttributeError):
         logger.debug("Could not determine server version from _version.py; using default")
 
 # Storage backend configuration
-SUPPORTED_BACKENDS = ['sqlite_vec', 'sqlite-vec', 'cloudflare', 'hybrid']
-STORAGE_BACKEND = os.getenv('MCP_MEMORY_STORAGE_BACKEND', 'sqlite_vec').lower()
-
-# Normalize backend names (sqlite-vec -> sqlite_vec)
-if STORAGE_BACKEND == 'sqlite-vec':
-    STORAGE_BACKEND = 'sqlite_vec'
+SUPPORTED_BACKENDS = ['cloudflare', 'falkordb']
+STORAGE_BACKEND = os.getenv('MCP_MEMORY_STORAGE_BACKEND', 'falkordb').lower()
 
 # Validate backend selection
 if STORAGE_BACKEND not in SUPPORTED_BACKENDS:
-    logger.warning(f"Unknown storage backend: {STORAGE_BACKEND}, falling back to sqlite_vec")
-    STORAGE_BACKEND = 'sqlite_vec'
+    raise ValueError(f"Unsupported storage backend: '{STORAGE_BACKEND}'. Supported backends: {SUPPORTED_BACKENDS}")
 
 logger.info(f"Using storage backend: {STORAGE_BACKEND}")
 
@@ -379,17 +374,17 @@ if STORAGE_BACKEND == 'sqlite_vec' or STORAGE_BACKEND == 'hybrid':
             sqlite_vec_path = path
             logger.info(f"Using {env_var}={path} for SQLite-vec database path")
             break
-    
+
     # If no environment variable is set, use the default path
     if not sqlite_vec_path:
         sqlite_vec_path = os.path.join(BASE_DIR, 'sqlite_vec.db')
         logger.info(f"No SQLite-vec path environment variable found, using default: {sqlite_vec_path}")
-    
+
     # Ensure directory exists for SQLite database
     sqlite_dir = os.path.dirname(sqlite_vec_path)
     if sqlite_dir:
         os.makedirs(sqlite_dir, exist_ok=True)
-    
+
     SQLITE_VEC_PATH = sqlite_vec_path
     logger.info(f"Using SQLite-vec database path: {SQLITE_VEC_PATH}")
 else:
@@ -410,14 +405,14 @@ if STORAGE_BACKEND == 'cloudflare' or STORAGE_BACKEND == 'hybrid':
     CLOUDFLARE_ACCOUNT_ID = os.getenv('CLOUDFLARE_ACCOUNT_ID')
     CLOUDFLARE_VECTORIZE_INDEX = os.getenv('CLOUDFLARE_VECTORIZE_INDEX')
     CLOUDFLARE_D1_DATABASE_ID = os.getenv('CLOUDFLARE_D1_DATABASE_ID')
-    
+
     # Optional Cloudflare settings
     CLOUDFLARE_R2_BUCKET = os.getenv('CLOUDFLARE_R2_BUCKET')  # For large content storage
     CLOUDFLARE_EMBEDDING_MODEL = os.getenv('CLOUDFLARE_EMBEDDING_MODEL', '@cf/baai/bge-base-en-v1.5')
     CLOUDFLARE_LARGE_CONTENT_THRESHOLD = int(os.getenv('CLOUDFLARE_LARGE_CONTENT_THRESHOLD', '1048576'))  # 1MB
     CLOUDFLARE_MAX_RETRIES = int(os.getenv('CLOUDFLARE_MAX_RETRIES', '3'))
     CLOUDFLARE_BASE_DELAY = float(os.getenv('CLOUDFLARE_BASE_DELAY', '1.0'))
-    
+
     # Validate required settings
     missing_vars = []
     if not CLOUDFLARE_API_TOKEN:
@@ -428,12 +423,12 @@ if STORAGE_BACKEND == 'cloudflare' or STORAGE_BACKEND == 'hybrid':
         missing_vars.append('CLOUDFLARE_VECTORIZE_INDEX')
     if not CLOUDFLARE_D1_DATABASE_ID:
         missing_vars.append('CLOUDFLARE_D1_DATABASE_ID')
-    
+
     if missing_vars:
         logger.error(f"Missing required environment variables for Cloudflare backend: {', '.join(missing_vars)}")
         logger.error("Please set the required variables or switch to a different backend")
         sys.exit(1)
-    
+
     logger.info(f"Using Cloudflare backend with:")
     logger.info(f"  Vectorize Index: {CLOUDFLARE_VECTORIZE_INDEX}")
     logger.info(f"  D1 Database: {CLOUDFLARE_D1_DATABASE_ID}")
@@ -548,8 +543,8 @@ MCP_SSE_PORT = safe_get_int_env('MCP_SSE_PORT', 8765, min_value=1024, max_value=
 # HTTP Server Configuration
 HTTP_ENABLED = os.getenv('MCP_HTTP_ENABLED', 'false').lower() == 'true'
 HTTP_PORT = safe_get_int_env('MCP_HTTP_PORT', 8000, min_value=1024, max_value=65535)  # Non-privileged ports only
-HTTP_HOST = os.getenv('MCP_HTTP_HOST', '127.0.0.1')
-CORS_ORIGINS = os.getenv('MCP_CORS_ORIGINS', 'http://localhost:8000,http://127.0.0.1:8000').split(',')
+HTTP_HOST = os.getenv('MCP_HTTP_HOST', '0.0.0.0')
+CORS_ORIGINS = os.getenv('MCP_CORS_ORIGINS', '*').split(',')
 SSE_HEARTBEAT_INTERVAL = safe_get_int_env('MCP_SSE_HEARTBEAT', 30, min_value=5, max_value=300)  # 5 seconds to 5 minutes
 API_KEY = os.getenv('MCP_API_KEY', None)  # Optional authentication
 
@@ -563,10 +558,6 @@ MDNS_ENABLED = os.getenv('MCP_MDNS_ENABLED', 'true').lower() == 'true'
 MDNS_SERVICE_NAME = os.getenv('MCP_MDNS_SERVICE_NAME', 'MCP Memory Service')
 MDNS_SERVICE_TYPE = os.getenv('MCP_MDNS_SERVICE_TYPE', '_mcp-memory._tcp.local.')
 MDNS_DISCOVERY_TIMEOUT = safe_get_int_env('MCP_MDNS_DISCOVERY_TIMEOUT', 5, min_value=1, max_value=60)
-
-# Peer Discovery TLS Configuration
-PEER_VERIFY_SSL = os.getenv('MCP_PEER_VERIFY_SSL', 'true').lower() == 'true'
-PEER_SSL_CA_FILE = os.getenv('MCP_PEER_SSL_CA_FILE', None)
 
 # Database path for HTTP interface (use SQLite-vec by default)
 if (STORAGE_BACKEND in ['sqlite_vec', 'hybrid']) and SQLITE_VEC_PATH:
@@ -678,23 +669,23 @@ CONSOLIDATION_CONFIG = {
         'standard': safe_get_int_env('MCP_RETENTION_STANDARD', 30, min_value=1, max_value=3650),
         'temporary': safe_get_int_env('MCP_RETENTION_TEMPORARY', 7, min_value=1, max_value=365)
     },
-    
+
     # Association settings
     'associations_enabled': os.getenv('MCP_ASSOCIATIONS_ENABLED', 'true').lower() == 'true',
     'min_similarity': float(os.getenv('MCP_ASSOCIATION_MIN_SIMILARITY', '0.3')),
     'max_similarity': float(os.getenv('MCP_ASSOCIATION_MAX_SIMILARITY', '0.7')),
     'max_pairs_per_run': int(os.getenv('MCP_ASSOCIATION_MAX_PAIRS', '1000')),
-    
+
     # Clustering settings
     'clustering_enabled': os.getenv('MCP_CLUSTERING_ENABLED', 'true').lower() == 'true',
     'min_cluster_size': int(os.getenv('MCP_CLUSTERING_MIN_SIZE', '5')),
     'clustering_algorithm': os.getenv('MCP_CLUSTERING_ALGORITHM', 'dbscan'),  # 'dbscan', 'hierarchical', 'simple'
-    
+
     # Compression settings
     'compression_enabled': os.getenv('MCP_COMPRESSION_ENABLED', 'true').lower() == 'true',
     'max_summary_length': int(os.getenv('MCP_COMPRESSION_MAX_LENGTH', '500')),
     'preserve_originals': os.getenv('MCP_COMPRESSION_PRESERVE_ORIGINALS', 'true').lower() == 'true',
-    
+
     # Forgetting settings
     'forgetting_enabled': os.getenv('MCP_FORGETTING_ENABLED', 'true').lower() == 'true',
     'relevance_threshold': float(os.getenv('MCP_FORGETTING_RELEVANCE_THRESHOLD', '0.1')),
@@ -1079,24 +1070,6 @@ if GRAPH_STORAGE_MODE not in VALID_GRAPH_MODES:
     GRAPH_STORAGE_MODE = 'dual_write'
 
 logger.info(f"Graph Storage Mode: {GRAPH_STORAGE_MODE}")
-
-# Whether consolidation should write association entries to the memories table.
-# Associations are already stored in memory_graph (the structured store).
-# Set to false to avoid search-result pollution and wasted embedding computation.
-# Default: true for backward compatibility.
-CONSOLIDATION_STORE_ASSOCIATIONS = os.getenv(
-    'MCP_CONSOLIDATION_STORE_ASSOCIATIONS', 'true'
-).lower() == 'true'
-logger.info(f"Consolidation store associations in memories table: {CONSOLIDATION_STORE_ASSOCIATIONS}")
-
-# Whether the RelationshipInferenceEngine assigns typed edges (fixes, causes,
-# contradicts, etc.) during consolidation. Set to false to keep all inferred
-# edges as "related", avoiding false-positive typed labels.
-# Default: true for backward compatibility.
-TYPED_EDGES_ENABLED = os.getenv(
-    'MCP_TYPED_EDGES_ENABLED', 'true'
-).lower() == 'true'
-logger.info(f"Typed edge inference enabled: {TYPED_EDGES_ENABLED}")
 
 # =============================================================================
 # End Graph Database Configuration

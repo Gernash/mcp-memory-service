@@ -16,6 +16,7 @@ Features:
 
 import asyncio
 import logging
+import os
 import sys
 import time
 from collections.abc import AsyncIterator
@@ -47,7 +48,7 @@ try:
 except ImportError:
     logger_temp = logging.getLogger(__name__)
     logger_temp.warning("FastMCP not available in mcp library - mcp_server module cannot be used")
-    
+
     # Create dummy objects for graceful degradation
     class _DummyFastMCP:
         def tool(self, *args, **kwargs):
@@ -55,7 +56,7 @@ except ImportError:
             def decorator(func):
                 return func
             return decorator
-    
+
     FastMCP = _DummyFastMCP  # type: ignore
     Context = None  # type: ignore
 
@@ -66,8 +67,6 @@ from .config import (
     STORAGE_BACKEND,
     EMBEDDING_MODEL_NAME,
     SQLITE_VEC_PATH,
-    HTTP_HOST,
-    HTTP_PORT,
 )
 from .storage.base import MemoryStorage
 from .services.memory_service import MemoryService
@@ -209,7 +208,7 @@ async def mcp_server_lifespan(server: FastMCP) -> AsyncIterator[MCPServerContext
 
             # Initialize storage backend using shared factory
             from .storage.factory import create_storage_instance
-            storage = await create_storage_instance(SQLITE_VEC_PATH, server_type="mcp")
+            storage = await create_storage_instance(server_type="mcp")
 
             # Cache the storage instance
             _STORAGE_CACHE[cache_key] = storage
@@ -236,8 +235,8 @@ async def mcp_server_lifespan(server: FastMCP) -> AsyncIterator[MCPServerContext
 try:
     mcp = FastMCP(
         name="MCP Memory Service",
-        host=HTTP_HOST,
-        port=HTTP_PORT,
+        host="0.0.0.0",  # Listen on all interfaces for remote access
+        port=8000,       # Default port
         lifespan=mcp_server_lifespan,
         stateless_http=True  # Enable stateless HTTP for Claude Code compatibility
     )
@@ -755,6 +754,10 @@ def main():
     This `mcp-memory-server` entry point starts an HTTP server on a port and is
     intended for remote/HTTP-based MCP clients only.
     """
+    # Configure for Claude Code integration
+    port = int(os.getenv("MCP_SERVER_PORT", "8000"))
+    host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
+
     # Emit a prominent warning so users who accidentally invoke this via stdio
     # see a clear message rather than a silent misconfiguration.
     print(
@@ -766,7 +769,7 @@ def main():
         file=sys.stderr
     )
 
-    logger.info(f"Starting MCP Memory Service FastAPI server on {HTTP_HOST}:{HTTP_PORT}")
+    logger.info(f"Starting MCP Memory Service FastAPI server on {host}:{port}")
     logger.info(f"Storage backend: {STORAGE_BACKEND}")
 
     # Run server with streamable HTTP transport
