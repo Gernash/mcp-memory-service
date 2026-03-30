@@ -543,8 +543,8 @@ MCP_SSE_PORT = safe_get_int_env('MCP_SSE_PORT', 8765, min_value=1024, max_value=
 # HTTP Server Configuration
 HTTP_ENABLED = os.getenv('MCP_HTTP_ENABLED', 'false').lower() == 'true'
 HTTP_PORT = safe_get_int_env('MCP_HTTP_PORT', 8000, min_value=1024, max_value=65535)  # Non-privileged ports only
-HTTP_HOST = os.getenv('MCP_HTTP_HOST', '0.0.0.0')
-CORS_ORIGINS = os.getenv('MCP_CORS_ORIGINS', '*').split(',')
+HTTP_HOST = os.getenv('MCP_HTTP_HOST', '127.0.0.1')  # Bind loopback by default (security)
+CORS_ORIGINS = os.getenv('MCP_CORS_ORIGINS', 'http://localhost:8000,http://127.0.0.1:8000').split(',')  # No wildcard by default
 SSE_HEARTBEAT_INTERVAL = safe_get_int_env('MCP_SSE_HEARTBEAT', 30, min_value=5, max_value=300)  # 5 seconds to 5 minutes
 API_KEY = os.getenv('MCP_API_KEY', None)  # Optional authentication
 
@@ -558,6 +558,10 @@ MDNS_ENABLED = os.getenv('MCP_MDNS_ENABLED', 'true').lower() == 'true'
 MDNS_SERVICE_NAME = os.getenv('MCP_MDNS_SERVICE_NAME', 'MCP Memory Service')
 MDNS_SERVICE_TYPE = os.getenv('MCP_MDNS_SERVICE_TYPE', '_mcp-memory._tcp.local.')
 MDNS_DISCOVERY_TIMEOUT = safe_get_int_env('MCP_MDNS_DISCOVERY_TIMEOUT', 5, min_value=1, max_value=60)
+
+# Peer Discovery TLS Configuration
+PEER_VERIFY_SSL = os.getenv('MCP_PEER_VERIFY_SSL', 'true').lower() == 'true'
+PEER_SSL_CA_FILE = os.getenv('MCP_PEER_SSL_CA_FILE', None)
 
 # Database path for HTTP interface (use SQLite-vec by default)
 if (STORAGE_BACKEND in ['sqlite_vec', 'hybrid']) and SQLITE_VEC_PATH:
@@ -1070,6 +1074,24 @@ if GRAPH_STORAGE_MODE not in VALID_GRAPH_MODES:
     GRAPH_STORAGE_MODE = 'dual_write'
 
 logger.info(f"Graph Storage Mode: {GRAPH_STORAGE_MODE}")
+
+# Whether consolidation should write association entries to the memories table.
+# Associations are already stored in memory_graph (the structured store).
+# Set to false to avoid search-result pollution and wasted embedding computation.
+# Default: true for backward compatibility.
+CONSOLIDATION_STORE_ASSOCIATIONS = os.getenv(
+    'MCP_CONSOLIDATION_STORE_ASSOCIATIONS', 'true'
+).lower() == 'true'
+logger.info(f"Consolidation store associations in memories table: {CONSOLIDATION_STORE_ASSOCIATIONS}")
+
+# Whether the RelationshipInferenceEngine assigns typed edges (fixes, causes,
+# contradicts, etc.) during consolidation. Set to false to keep all inferred
+# edges as "related", avoiding false-positive typed labels.
+# Default: true for backward compatibility.
+TYPED_EDGES_ENABLED = os.getenv(
+    'MCP_TYPED_EDGES_ENABLED', 'true'
+).lower() == 'true'
+logger.info(f"Typed edge inference enabled: {TYPED_EDGES_ENABLED}")
 
 # =============================================================================
 # End Graph Database Configuration
