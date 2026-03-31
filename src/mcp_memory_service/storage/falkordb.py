@@ -112,10 +112,14 @@ class FalkorDBMemoryStorage(MemoryStorage):
         else:
             try:
                 from sentence_transformers import SentenceTransformer
-                model = SentenceTransformer(self.embedding_model_name)
+                # Force CPU — gernash-memory is a lightweight index service.
+                # Without this, PyTorch will try to claim VRAM which may be
+                # saturated by Cognee ingest (qwen3-8b max GPU), causing the
+                # MCP tool call to hang until VS Code times out.
+                model = SentenceTransformer(self.embedding_model_name, device="cpu")
                 _MODEL_CACHE[self.embedding_model_name] = model
                 self._embedding_model = model
-                logger.info(f"Loaded embedding model: {self.embedding_model_name}")
+                logger.info(f"Loaded embedding model: {self.embedding_model_name} (device=cpu)")
             except ImportError:
                 logger.error(
                     "sentence_transformers not installed — vector search unavailable"
