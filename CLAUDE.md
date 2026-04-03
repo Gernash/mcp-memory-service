@@ -45,7 +45,7 @@ Before merging or releasing:
 
 MCP Memory Service is a Model Context Protocol server providing semantic memory and persistent storage for Claude Desktop and 13+ AI applications. It uses vector embeddings for semantic search, supports multiple storage backends (SQLite-vec, Cloudflare, Hybrid), and includes advanced features like memory consolidation, quality scoring, and OAuth 2.1 team collaboration.
 
-**Current Version:** v10.30.0 - feat(memory-evolution): non-destructive updates, lineage tracking, staleness scoring, conflict detection (P1+P2+P3) — 1,514 tests — see [CHANGELOG.md](CHANGELOG.md) for details
+**Current Version:** v10.31.2 - fix: consistent metadata parsing, non-JSON error handling, upload progress tracking (#648, #649, #650) — 1,521 tests — see [CHANGELOG.md](CHANGELOG.md) for details
 
 > **🎯 v10.0.0 Milestone**: This major release represents a complete API consolidation - 34 tools unified into 12 with enhanced capabilities. All deprecated tools continue working with warnings until v11.0. See `docs/MIGRATION.md` for migration guide.
 
@@ -378,6 +378,9 @@ export MCP_EXTERNAL_EMBEDDING_API_KEY=sk-xxx  # Optional
 
 **Target:** All complexity A-B grade (complexity ≤8)
 
+### External Data Parsers
+- **Always inspect real data first**: Download and inspect a sample of the real data BEFORE writing parsers or tests. Never trust API docs or project pages alone — real JSON structures often differ from descriptions (e.g., LoCoMo observations are nested dicts, not newline-separated strings).
+
 ### Development Workflow
 
 **Read first:**
@@ -525,7 +528,7 @@ python scripts/validation/diagnose_backend_config.py          # Backend-specific
 **Workflow automation:**
 - **changelog-archival** - Maintains lean CHANGELOG by archiving older versions
 - **github-release-manager** - Complete release workflow (version bump, CHANGELOG, PR creation)
-- **amp-bridge** - Fast refactoring with Amp CLI
+- **amp-automation** - Coding tasks + PR quality analysis with Amp CLI
 - **code-quality-guard** - Quality analysis before commits
 - **gemini-pr-automator** - Automated PR reviews and fixes
 

@@ -27,6 +27,14 @@ p.md)
 
 ---
 
+## 🎬 See It in Action
+
+[![Watch the Dashboard Walkthrough](https://img.youtube.com/vi/fSmUpFsZW7U/maxresdefault.jpg)](https://youtu.be/fSmUpFsZW7U)
+
+**[Watch the Web Dashboard Walkthrough on YouTube](https://youtu.be/fSmUpFsZW7U)** — Semantic search, tag browser, document ingestion, analytics, quality scoring, and API docs in under 2 minutes.
+
+---
+
 ## 🌐 Works with claude.ai (Browser)
 
 Unlike desktop-only MCP servers, **mcp-memory-service supports Remote MCP** for native claude.ai integration.
@@ -368,21 +376,25 @@ Export memories from mcp-memory-service → Import to shodh-cloudflare → Sync 
 ---
 
 
-## Latest Release: **v10.30.0** (March 30, 2026)
+## Latest Release: **v10.31.2** (April 3, 2026)
 
-**feat: Memory Evolution — Non-destructive updates, lineage tracking, staleness scoring, conflict detection (P1+P2+P3)**
+**fix: storage consistency, error handling, and upload progress (community PRs #648, #649, #650)**
 
 **What's New:**
-- **Non-destructive versioned updates (P1)**: `update_memory_versioned()` creates child nodes, marks parents as superseded, and tracks full lineage — history is never lost.
-- **Staleness scoring with decay (P2)**: `_effective_confidence()` time-decays memory confidence; `retrieve_with_staleness()` filters out stale memories automatically. Configurable via `MEMORY_DECAY_WINDOW_DAYS`.
-- **Automatic conflict detection (P3)**: `memory_store()` detects contradictions (cosine > 0.95 + Levenshtein divergence > 20%) and links them as `contradicts` graph edges.
-- **New MCP tools**: `memory_conflicts` and `memory_resolve` for managing contradictions.
-- **New REST endpoints**: `GET /api/conflicts` and `POST /api/conflicts/resolve`.
-- **30 new tests** covering all three phases (1,514 total).
+- **Consistent `_safe_json_loads` usage (#648)**: Replaced remaining bare `json.loads` calls in `get_largest_memories()` and `get_graph_visualization_data()` with the `_safe_json_loads` helper for consistent error handling.
+- **Non-JSON error response handling (#649)**: HTTP client and embedding API now gracefully handle non-JSON error responses (e.g. HTML from reverse proxies) instead of crashing.
+- **Upload progress tracking (#650)**: Fixed broken single-file progress formula and added per-file batch progress updates for smooth 0→100% tracking.
+- **Repo & agent cleanup**: Moved 8 legacy docs to archive, cleaned up `.claude/` config, consolidated agents (84% size reduction: 2,507 → 412 lines).
+- **1,503 tests** passing.
+
+Thanks to @lawrence3699 for contributing PRs #648, #649, and #650!
 
 ---
 
 **Previous Releases**:
+- **v10.31.1** - fix: tombstone blocks re-insertion after delete of same content (#644) — `_purge_tombstone()` before INSERT (1,521 tests)
+- **v10.31.0** - feat: Harvest Evolution (P4) + Sync-in-Async Refactoring — harvest dedup via `update_memory_versioned()`, `asyncio.to_thread()` in `_execute_with_retry` (1,520 tests)
+- **v10.30.0** - feat: Memory Evolution (P1+P2+P3) — non-destructive versioned updates, staleness scoring, conflict detection + resolution (1,514 tests)
 - **v10.29.1** - fix: clean up orphaned graph edges on memory deletion — cascade edge removal in delete/delete_by_tag/delete_by_tags + periodic orphan pruning in consolidation
 - **v10.29.0** - feat(harvest): LLM-based classification via Groq (Phase 2, #628) — `memory_harvest` supports `use_llm=true` for higher-precision category labels via _GroqClassifierBridge
 - **v10.28.5** - Bug fix: MCP_ALLOW_ANONYMOUS_ACCESS=true now respected in the dashboard (anonymous users granted read+write scope)
@@ -488,6 +500,29 @@ result = storage.find_connected(
 **Relationship Types:**
 - Asymmetric: causes, fixes, supports, follows (A→B ≠ B→A)
 - Symmetric: related, contradicts (A↔B)
+
+### Retrieval Benchmarks
+
+Two benchmarks measure retrieval quality (all-MiniLM-L6-v2, 384d embeddings):
+
+**DevBench** (practical developer workflow queries):
+
+| Category | Recall@5 | MRR |
+|----------|----------|-----|
+| **Overall** | **91.1%** | **0.861** |
+| exact | 100% | 1.000 |
+| semantic | 80.0% | 0.700 |
+| cross-type | 90.0% | 0.867 |
+
+**LoCoMo** ([ACL 2024](https://github.com/snap-research/locomo) long-term conversational memory):
+
+| Category | Recall@5 | MRR |
+|----------|----------|-----|
+| **Overall** | **49.7%** | **0.414** |
+| multi-hop | 72.0% | 0.600 |
+| temporal | 33.5% | 0.274 |
+
+Run benchmarks: `python scripts/benchmarks/benchmark_devbench.py` and `python scripts/benchmarks/benchmark_locomo.py`
 
 ### Performance Improvements
 

@@ -10,6 +10,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [10.31.2] - 2026-04-03
+
+### Fixed
+
+- **[#648] Use `_safe_json_loads` consistently for metadata parsing**: Replaced remaining bare `json.loads` calls in `get_largest_memories()` and `get_graph_visualization_data()` with `_safe_json_loads` helper, ensuring consistent error handling for malformed metadata across all SQLite-Vec storage methods. Also corrected the context string from `"get_graph_data"` to `"get_graph_visualization_data"` for accurate error logs. (PR #648, contributor: @lawrence3699)
+- **[#649] Handle non-JSON error responses in HTTP client and embedding API**: Wrapped `response.json()` calls on error paths in `http_client.py` (`store()`, `delete()`) with `try/except (ContentTypeError, ValueError)` to handle HTML/empty responses from reverse proxies. Added similar guards in `external_api.py` for `_verify_connection()` and `encode()`. (PR #649, contributor: @lawrence3699)
+- **[#650] Correct upload progress tracking for single and batch uploads**: Removed broken single-file progress formula that always evaluated to 100%. Added per-file `session.progress` updates during batch processing so the polling endpoint returns smooth 0→100% progress instead of jumping at completion. (PR #650, contributor: @lawrence3699)
+
+### Changed
+
+- **Repo root cleanup**: Moved 8 legacy documentation files (`FIXES_COMPLETE.md`, `IMPLEMENTATION_SUMMARY.md`, `TEST_ADDITIONS_SUMMARY.md`, `TEST_VALIDATION_REPORT.md`, `AUTH_FLOW_DIAGRAM.md`, `test_auth_implementation.md`, `test_fixes.py`, `.commit-message`) to `archive/docs-root-cleanup-2026-04-02/`. Removed redundant `venv/` directory (keeping `.venv/` as the active Python 3.11 environment).
+- **`.claude/` cleanup**: Archived obsolete consolidation handoff docs (v8.47.1, Dec 2025), completed tool-optimization task plans (PR #373), and removed tracked config backup duplicates (`settings.local.json.backup`, `.local`).
+- **Agent consolidation (84% reduction)**: Merged `amp-bridge` + `amp-pr-automator` into single `amp-automation` agent (889 → 120 lines). Trimmed `github-release-manager` (640 → 144 lines) and `gemini-pr-automator` (881 → 122 lines) by removing duplicate sections and referencing existing scripts instead of embedding them. Slimmed `/release` command to thin wrapper (97 → 26 lines). Total: 2,507 → 412 lines.
+- **Docs**: Added pending v10.31.0 blog post, LoCoMo benchmark analysis, DevBench/LoCoMo plans and specs, new learned instincts, and external data parser guideline to `CLAUDE.md`.
+
+## [10.31.1] - 2026-03-31
+
+### Fixed
+
+- **[#644] `store()` fails with UNIQUE constraint after `delete()` of same content (tombstone blocks re-insertion)**: Soft-deleted memories leave a tombstone row (with `deleted_at` set) that caused `INSERT OR IGNORE` to silently drop re-insertions of the same content hash, and `INSERT` to raise a `UNIQUE constraint failed` error. Fixed by adding `_purge_tombstone(content_hash)` helper to `SqliteVecMemoryStorage` that removes the tombstone row before any INSERT. Applied to `store()`, `store_batch()`, and `update_memory_versioned()`. Added test `test_store_after_delete_same_content` covering the full delete → re-store roundtrip.
+
+## [10.31.0] - 2026-03-30
+
+### Added
+
+- **[#641] Harvest evolution (P4): evolve similar memories instead of duplicating**: Before storing a harvested memory, `memory_harvest` now checks semantic similarity against all active memories. If the best match exceeds the configurable threshold (default 0.85), the harvested content is routed through `update_memory_versioned()` to evolve the existing memory rather than creating a duplicate. This keeps the memory store clean and preserves lineage history automatically.
+- **[#641] `HarvestConfig` evolution fields**: Two new configuration fields added to `HarvestConfig`: `similarity_threshold` (float, default 0.85) and `min_confidence_to_evolve` (float, default 0.3). Both are overridable via environment variables `MCP_HARVEST_SIMILARITY_THRESHOLD` and `MCP_HARVEST_MIN_CONFIDENCE_TO_EVOLVE`.
+- **[#641] `harvest_config_from_env()` factory function**: New factory that reads `HarvestConfig` from environment variables, providing a clean interface for deployment-time configuration without code changes.
+- **[#641] 9 new harvest evolution tests**: 3 config tests (env-var overrides, defaults, factory function) and 6 evolution scenario tests (novel memory stored as new, stale memory evolved, threshold boundary, superseded memory skipped, fallback on evolve error, no candidates).
+- **[#637] `asyncio.to_thread()` wrapping in `_execute_with_retry`**: All SQLite-Vec DB operations routed through `_execute_with_retry` now run in a thread pool via `asyncio.to_thread()`, preventing event-loop blocking under concurrent async load. A TODO comment documents the ~122 remaining direct `self.conn.execute()` calls that are candidates for the same treatment in a follow-up.
+- **[#637] 3 new async threading tests**: Verify that `_execute_with_retry` does not block the event loop, that concurrent calls complete without serialization deadlocks, and that the `check_same_thread=False` connection flag is set correctly.
+
+### Fixed
+
+- **[#641] Tag computation moved inside `else` branch**: Avoided redundant tag work on the evolve path — tags are now computed only when a new memory is actually being stored.
+- **[#641] Strengthened test assertions**: Replaced permissive `if result.found > 0` guards with hard `assert result.found > 0` so evolution test failures surface immediately rather than passing silently.
+- **[#637] Removed unused import** in `sqlite_vec.py` introduced during the async refactor.
+- **[#637] `check_same_thread` docstring note** added to the connection initialisation comment, explaining why `False` is required for the thread-pool pattern.
+
 ## [10.30.0] - 2026-03-30
 
 ### Added
