@@ -15,13 +15,11 @@ Config env vars:
     MCP_EMBEDDING_MODEL        Embedding model   (default: all-MiniLM-L6-v2)
 """
 
-import asyncio
 import hashlib
 import json
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -78,14 +76,11 @@ class FalkorDBMemoryStorage(MemoryStorage):
         self.falkordb_password = os.getenv("FALKORDB_PASSWORD", "3Zy!2!M7jF99vgRp")
         self.embedding_model_name = embedding_model
 
-        self._graph = None          # FalkorDB Graph object
+        self._graph = None          # FalkorDB AsyncGraph object
         self._lance_db = None       # LanceDB connection
         self._lance_table = None    # LanceDB table
         self._embedding_model = None
         self._embedding_dim = 384   # Updated on init once model loads
-        self._executor = ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="falkordb"
-        )
         self._initialized = False
 
         logger.info(
@@ -96,13 +91,9 @@ class FalkorDBMemoryStorage(MemoryStorage):
     # ------------------------------------------------------------------ internal helpers
 
     async def _query(self, cypher: str, params: Optional[Dict] = None):
-        """Execute a Cypher query asynchronously (FalkorDB client is sync)."""
-        graph = self._graph
+        """Execute a Cypher query using the native async FalkorDB client."""
         p = params or {}
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            self._executor, lambda: graph.query(cypher, p)
-        )
+        return await self._graph.query(cypher, p)
 
     def _load_embedding_model(self) -> None:
         """Load SentenceTransformer — cached at module level."""
@@ -170,22 +161,18 @@ class FalkorDBMemoryStorage(MemoryStorage):
             return
 
         try:
-            import falkordb as fdb
+            from falkordb.asyncio import FalkorDB as AsyncFalkorDB
 
-            # Connect to FalkorDB (sync — run in executor)
-            def _connect():
-                kwargs = dict(
-                    host=self.falkordb_host,
-                    port=self.falkordb_port,
-                    password=self.falkordb_password,
-                )
-                if self.falkordb_username:
-                    kwargs["username"] = self.falkordb_username
-                db = fdb.FalkorDB(**kwargs)
-                return db.select_graph(self.graph_name)
-
-            loop = asyncio.get_event_loop()
-            self._graph = await loop.run_in_executor(self._executor, _connect)
+            # Connect to FalkorDB using native async client (no ThreadPoolExecutor)
+            kwargs = dict(
+                host=self.falkordb_host,
+                port=self.falkordb_port,
+                password=self.falkordb_password,
+            )
+            if self.falkordb_username:
+                kwargs["username"] = self.falkordb_username
+            db = AsyncFalkorDB(**kwargs)
+            self._graph = db.select_graph(self.graph_name)
 
             # Create index on content_hash (idempotent — ignore if exists)
             try:
