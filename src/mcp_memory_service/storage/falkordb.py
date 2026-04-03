@@ -713,3 +713,165 @@ class FalkorDBMemoryStorage(MemoryStorage):
         except Exception as e:
             logger.error(f"resolve_conflict() failed: {e}")
             return False, str(e)
+
+    # ------------------------------------------------------------------ recent / time-range
+
+    async def get_recent_memories(self, n: int = 10) -> List[Memory]:
+        """Return the n most recently created memories, newest first."""
+        try:
+            result = await self._query(
+                "MATCH (m:Memory) RETURN m ORDER BY m.created_at DESC LIMIT $n",
+                {"n": n},
+            )
+            memories = []
+            for row in result.result_set:
+                m = self._row_to_memory(row)
+                if m:
+                    memories.append(m)
+            return memories
+        except Exception as e:
+            logger.error(f"get_recent_memories() failed: {e}")
+            return []
+
+    async def get_memories_by_time_range(
+        self, start_time: float, end_time: float
+    ) -> List[Memory]:
+        """Return memories whose created_at falls within [start_time, end_time]."""
+        try:
+            result = await self._query(
+                "MATCH (m:Memory) WHERE m.created_at >= $start AND m.created_at <= $end "
+                "RETURN m ORDER BY m.created_at DESC",
+                {"start": start_time, "end": end_time},
+            )
+            memories = []
+            for row in result.result_set:
+                m = self._row_to_memory(row)
+                if m:
+                    memories.append(m)
+            return memories
+        except Exception as e:
+            logger.error(f"get_memories_by_time_range() failed: {e}")
+            return []
+
+    # ------------------------------------------------------------------ delete by time
+
+    async def delete_by_timeframe(
+        self,
+        start_date,
+        end_date,
+        tag: Optional[str] = None,
+    ) -> Tuple[int, str]:
+        """Delete memories created between start_date and end_date (inclusive).
+
+        Accepts datetime.date, datetime.datetime, or Unix float timestamps.
+        Optional tag filter restricts deletion to memories with that tag.
+        """
+        from datetime import date as _date, datetime as _datetime
+
+        def _to_ts(d) -> float:
+            if isinstance(d, _datetime):
+                return d.timestamp()
+            if isinstance(d, _date):
+                return _datetime(d.year, d.month, d.day).timestamp()
+            return float(d)
+
+        start_ts = _to_ts(start_date)
+        end_ts = _to_ts(end_date) + 86400  # include the whole end day
+
+        try:
+            if tag:
+                result = await self._query(
+                    "MATCH (m:Memory)-[:HAS_TAG]->(:Tag {name: $tag}) "
+                    "WHERE m.created_at >= $start AND m.created_at < $end "
+                    "DETACH DELETE m RETURN count(m) AS n",
+                    {"tag": tag, "start": start_ts, "end": end_ts},
+                )
+            else:
+                result = await self._query(
+                    "MATCH (m:Memory) WHERE m.created_at >= $start AND m.created_at < $end "
+                    "DETACH DELETE m RETURN count(m) AS n",
+                    {"start": start_ts, "end": end_ts},
+                )
+            count = result.result_set[0][0] if result.result_set else 0
+            return count, f"Deleted {count} memories in timeframe"
+        except Exception as e:
+            logger.error(f"delete_by_timeframe() failed: {e}")
+            return 0, str(e)
+
+    async def delete_before_date(
+        self,
+        before_date,
+        tag: Optional[str] = None,
+    ) -> Tuple[int, str]:
+        """Delete memories created before before_date (exclusive).
+
+        Accepts datetime.date, datetime.datetime, or Unix float timestamps.
+        Optional tag filter restricts deletion to memories with that tag.
+        """
+        from datetime import date as _date, datetime as _datetime
+
+        def _to_ts(d) -> float:
+            if isinstance(d, _datetime):
+                return d.timestamp()
+            if isinstance(d, _date):
+                return _datetime(d.year, d.month, d.day).timestamp()
+            return float(d)
+
+        cutoff_ts = _to_ts(before_date)
+
+        try:
+            if tag:
+                result = await self._query(
+                    "MATCH (m:Memory)-[:HAS_TAG]->(:Tag {name: $tag}) "
+                    "WHERE m.created_at < $cutoff "
+                    "DETACH DELETE m RETURN count(m) AS n",
+                    {"tag": tag, "cutoff": cutoff_ts},
+                )
+            else:
+                result = await self._query(
+                    "MATCH (m:Memory) WHERE m.created_at < $cutoff "
+                    "DETACH DELETE m RETURN count(m) AS n",
+                    {"cutoff": cutoff_ts},
+                )
+            count = result.result_set[0][0] if result.result_set else 0
+            return count, f"Deleted {count} memories before cutoff"
+        except Exception as e:
+            logger.error(f"delete_before_date() failed: {e}")
+            return 0, str(e)
+
+    # ------------------------------------------------------------------ counts
+
+    async def count_all_memories(
+        self,
+        memory_type: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+    ) -> int:
+        """Return total memory count, optionally filtered by type and/or tags (ANY match)."""
+        try:
+            if memory_type and tags:
+                result = await self._query(
+                    "MATCH (m:Memory)-[:HAS_TAG]->(t:Tag) "
+                    "WHERE m.memory_type = $mtype AND t.name IN $tags "
+                    "RETURN count(DISTINCT m) AS n",
+                    {"mtype": memory_type, "tags": tags},
+                )
+            elif memory_type:
+                result = await self._query(
+                    "MATCH (m:Memory) WHERE m.memory_type = $mtype "
+                    "RETURN count(m) AS n",
+                    {"mtype": memory_type},
+                )
+            elif tags:
+                result = await self._query(
+                    "MATCH (m:Memory)-[:HAS_TAG]->(t:Tag) WHERE t.name IN $tags "
+                    "RETURN count(DISTINCT m) AS n",
+                    {"tags": tags},
+                )
+            else:
+                result = await self._query(
+                    "MATCH (m:Memory) RETURN count(m) AS n"
+                )
+            return result.result_set[0][0] if result.result_set else 0
+        except Exception as e:
+            logger.error(f"count_all_memories() failed: {e}")
+            return 0
