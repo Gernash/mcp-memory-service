@@ -4,9 +4,21 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.claude/**'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.claude/**'
+      - 'LICENSE'
+      - '.gitignore'
 
 jobs:
   # First, try to create a release
@@ -28,7 +40,7 @@ jobs:
         fetch-depth: 0
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: '3.9'
 
@@ -98,6 +110,14 @@ jobs:
             echo "tag=v$AFTER_VERSION"
           } >> $GITHUB_OUTPUT
           
+          # Sync lite package version
+          if [ -f pyproject-lite.toml ]; then
+            sed -i "s/^version = \".*\"/version = \"$AFTER_VERSION\"/" pyproject-lite.toml
+            git add pyproject-lite.toml
+            git commit --amend --no-edit
+            echo "✅ Synced pyproject-lite.toml to $AFTER_VERSION"
+          fi
+
           # Create tag manually
           git tag "v$AFTER_VERSION"
           echo "✅ Tag v$AFTER_VERSION created locally"
@@ -141,12 +161,12 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: '3.11'
 
     - name: Cache HuggingFace models
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.cache/huggingface
         key: ${{ runner.os }}-huggingface-models-v2-${{ hashFiles('pyproject.toml') }}
@@ -222,10 +242,10 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
 
     - name: Build Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
       with:
         context: .
         file: ./tools/docker/Dockerfile
@@ -264,7 +284,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
       with:
         driver: docker-container  # Use container driver for multi-platform builds
 
@@ -277,7 +297,7 @@ jobs:
 
     - name: Extract metadata
       id: meta
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@v6
       with:
         images: docker.io/doobidoo/mcp-memory-service
         tags: |
@@ -287,7 +307,7 @@ jobs:
           type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.tag }}
 
     - name: Build and push Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
       with:
         context: .
         file: ./tools/docker/Dockerfile
@@ -313,7 +333,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@v4
       with:
         driver: docker-container  # Use container driver for multi-platform builds
 
@@ -326,7 +346,7 @@ jobs:
 
     - name: Extract metadata
       id: meta
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@v6
       with:
         images: ghcr.io/doobidoo/mcp-memory-service
         tags: |
@@ -334,7 +354,7 @@ jobs:
           type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Build and push Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
       with:
         context: .
         file: ./tools/docker/Dockerfile

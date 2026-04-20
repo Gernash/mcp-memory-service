@@ -48,8 +48,18 @@ $StartTime = Get-Date
 # Configuration
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 $ManageServiceScript = Join-Path $PSScriptRoot "manage_service.ps1"
-# HTTP server (default configuration — no TLS)
-$HealthUrl = "http://127.0.0.1:8000/api/health"
+
+# NOTE: Do NOT dot-source lib/server-config.ps1 here!
+#
+# Chicken-egg problem: if the currently checked-out lib has a bug
+# (e.g., ICertificatePolicy incompatible with PowerShell 7+), sourcing
+# it at script start would fail *before* `git pull` can deliver the fix.
+# We defer sourcing to AFTER the pull+install steps, so the freshly
+# pulled lib version is loaded. Steps 1-4 (status/pull/install) don't
+# need any lib functions.
+$HealthUrl = $null
+$DashboardUrl = $null
+$McpWebExtras = @{}
 
 # Color helpers
 function Write-InfoLog { param($Message) Write-Host "[i] $Message" -ForegroundColor Cyan }
@@ -79,7 +89,7 @@ function Get-ServerVersion {
             Uri = $HealthUrl
             TimeoutSec = 3
             ErrorAction = 'SilentlyContinue'
-        }
+        } + $McpWebExtras
         $Response = Invoke-RestMethod @params
         return $Response.version
     } catch {
@@ -265,6 +275,16 @@ try {
     Write-WarningLog "Could not verify installation version"
 }
 
+# Source shared server-config lib AFTER pull+install so we get the freshly
+# pulled version (see note at top). Needed for URL resolution and HTTPS
+# cert bypass during restart + health check.
+. "$PSScriptRoot\lib\server-config.ps1"
+$ServerConfig = Get-McpServerConfig -ProjectRoot $ProjectRoot
+Enable-McpSelfSignedCertBypass
+$McpWebExtras = Get-McpWebRequestExtraParams -HttpsEnabled $ServerConfig.HttpsEnabled
+$HealthUrl = $ServerConfig.HealthUrl
+$DashboardUrl = $ServerConfig.DashboardUrl
+
 # Step 6: Restart server (if requested)
 if ($NoRestart) {
     Write-WarningLog "Skipping server restart (-NoRestart flag)"
@@ -306,7 +326,7 @@ if ($NoRestart) {
                 Uri = $HealthUrl
                 TimeoutSec = 2
                 ErrorAction = 'SilentlyContinue'
-            }
+            } + $McpWebExtras
             $HealthResponse = Invoke-RestMethod @params
             $ServerVersion = $HealthResponse.version
 
@@ -344,8 +364,8 @@ Write-Host ""
 Write-SuccessLog "Version: $CurrentVersion -> $NewVersion"
 Write-SuccessLog "Total time: ${TotalTime}s"
 Write-Host ""
-Write-InfoLog "Dashboard: http://localhost:8000"
-Write-InfoLog "API Docs:  http://localhost:8000/api/docs"
+Write-InfoLog "Dashboard: $DashboardUrl"
+Write-InfoLog "API Docs:  $($ServerConfig.BaseUrl)/api/docs"
 Write-Host ""
 
 if ($CurrentVersion -ne $NewVersion) {

@@ -6,7 +6,7 @@ Open-source memory backend for multi-agent systems.
 Agents store decisions, share causal knowledge graphs, and retrieve
 context in 5ms — without cloud lock-in or API costs.
 
-**Works with LangGraph · CrewAI · AutoGen · any HTTP client · Claude Desktop**
+**Works with LangGraph · CrewAI · AutoGen · any HTTP client · Claude Desktop · OpenCode**
 
 ---
 
@@ -20,8 +20,7 @@ context in 5ms — without cloud lock-in or API costs.
 [![Works with Claude](https://img.shields.io/badge/Works%20with-Claude-blue)](https://claude.ai)
 [![Works with Cursor](https://img.shields.io/badge/Works%20with-Cursor-orange)](https://cursor.sh)
 [![Remote MCP](https://img.shields.io/badge/MCP-Remote%20Support-blue?logo=anthropic)](docs/remote-mcp-setup.md)
-[![claude.ai](https://img.shields.io/badge/claude.ai-Browser%20Compatible-orange?logo=anthropic)](docs/remote-mcp-setu
-p.md)
+[![claude.ai Browser Compatible](https://img.shields.io/badge/claude.ai-Browser%20Compatible-orange?logo=anthropic)](docs/remote-mcp-setup.md)
 [![OAuth 2.0](https://img.shields.io/badge/Auth-OAuth%202.0%20%2B%20DCR-green)](docs/oauth-setup.md)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github)](https://github.com/sponsors/doobidoo)
 
@@ -29,9 +28,9 @@ p.md)
 
 ## 🎬 See It in Action
 
-[![Watch the Dashboard Walkthrough](https://img.youtube.com/vi/fSmUpFsZW7U/maxresdefault.jpg)](https://youtu.be/fSmUpFsZW7U)
+[![Watch the Dashboard Walkthrough](https://img.youtube.com/vi/W34r8VFoSdQ/maxresdefault.jpg)](https://youtu.be/W34r8VFoSdQ)
 
-**[Watch the Web Dashboard Walkthrough on YouTube](https://youtu.be/fSmUpFsZW7U)** — Semantic search, tag browser, document ingestion, analytics, quality scoring, and API docs in under 2 minutes.
+**[Watch the Web Dashboard Walkthrough on YouTube](https://youtu.be/W34r8VFoSdQ)** — Semantic search, tag browser, document ingestion, analytics, quality scoring, and API docs in under 2 minutes.
 
 ---
 
@@ -163,6 +162,8 @@ A production-tested self-hosted deployment using Docker containers behind a Clou
 
 ## Comparison with Alternatives
 
+### vs. Commercial Memory APIs
+
 | | Mem0 | Zep | DIY Redis+Pinecone | **mcp-memory-service** |
 |---|---|---|---|---|
 | License | Proprietary | Enterprise | — | **Apache 2.0** |
@@ -178,6 +179,32 @@ A production-tested self-hosted deployment using Docker containers behind a Clou
 | Hybrid search | No | Yes | Manual | **Yes (BM25 + vector)** |
 | MCP protocol | No | No | No | **Yes** |
 | REST API | Yes | Yes | Manual | **Yes (15 endpoints)** |
+
+### vs. MCP-Native Alternatives
+
+[MemPalace](https://github.com/milla-jovovich/mempalace) is an MCP-native alternative that went viral in April 2026 with strong LongMemEval claims. A [community code review (Issue #27)](https://github.com/milla-jovovich/mempalace/issues/27) subsequently showed that the headline numbers reflect the underlying vector store rather than the advertised Palace architecture, and the maintainers acknowledged most points. We keep the comparison here for transparency, but readers should interpret the scores with that context in mind.
+
+| | **MemPalace** | **mcp-memory-service** |
+|---|---|---|
+| LongMemEval R@5 (raw ChromaDB, zero LLM) | 96.6%¹ | 86.0% (session) / 80.4% (turn) |
+| LongMemEval R@5 (with reranking) | 100%² | — |
+| Storage granularity | Session-level | **Turn-level + session-level** |
+| Team / multi-device sync | ❌ Local only | **✅ Cloudflare sync** |
+| REST API / Web dashboard | ❌ | **✅** |
+| OAuth 2.1 + multi-user | ❌ | **✅** |
+| Knowledge graph | ❌ | **✅ (typed edges)** |
+| Auto consolidation | ❌ | **✅ (decay + compression)** |
+| Compatible AI tools | Claude-focused | **13+ tools** |
+| License | MIT | **Apache 2.0** |
+
+**Why the benchmark gap?** Two independent factors:
+
+1. **Ingestion granularity.** MemPalace stores each conversation as a single unit (session-level). LongMemEval asks "which session contains the answer?" — a question that session-level storage answers structurally. mcp-memory-service defaults to turn-level storage (one entry per message), which enables fine-grained retrieval ("what exactly did the user say about X?") but spreads a session's signal across many entries. Using `memory_store_session` (added in v10.35.0) brings our score to **86.0% R@5**.
+2. **What the 96.6% actually measures.** Per Issue #27, MemPalace's headline number is produced in "raw mode" — plain text stored in ChromaDB with default embeddings. The Palace architecture (Wings, Rooms, Halls) is **not active** in that configuration; "Halls" exist only as metadata strings with no effect on ranking. The 96.6% is therefore a ChromaDB + default-embedding baseline, not a measurement of MemPalace's structural retrieval features. A direct "apples-to-apples" architectural comparison is not possible with the published numbers.
+
+> ¹ Measured in MemPalace "raw mode" (plain text in ChromaDB with default embeddings). Per [Issue #27](https://github.com/milla-jovovich/mempalace/issues/27), the Palace structural features are bypassed in this configuration.
+>
+> ² 100% result uses optional LLM reranking (~500 API calls) on a partially tuned test set. Clean held-out score (as reported by the maintainers): **98.4% R@5**.
 
 ---
 
@@ -224,6 +251,8 @@ It automatically captures your project context, architecture decisions, and code
 
 ## 🚀 Get Started in 60 Seconds
 
+> Not sure which setup fits your needs? See the **[Setup Guide](docs/setup-guide.md)** — a decision tree walks you to the right path in under a minute.
+
 **1. Install:**
 
 ```bash
@@ -263,6 +292,35 @@ claude mcp add memory -- memory server
 ```
 
 Restart Claude Code. Memory tools will appear automatically.
+
+</details>
+
+<details>
+<summary><strong>OpenCode</strong></summary>
+
+Start the HTTP API:
+
+```bash
+MCP_ALLOW_ANONYMOUS_ACCESS=true memory server --http
+```
+
+Install the local plugin:
+
+```bash
+git clone https://github.com/doobidoo/mcp-memory-service.git
+cd mcp-memory-service
+mkdir -p ~/.config/opencode/plugins
+cp opencode/memory-plugin.js ~/.config/opencode/plugins/
+cp opencode/memory-plugin.config.example.json ~/.config/opencode/memory-plugin.json
+```
+
+OpenCode automatically loads local plugins from `~/.config/opencode/plugins/` and `.opencode/plugins/`.
+
+See [OpenCode integration guide](opencode/README.md) for configuration, project-local installs, and current limitations.
+
+> The current OpenCode integration ships as repository files for the local plugin directory. If you installed only the PyPI package, clone the repository once to copy the plugin files.
+>
+> The plugin defaults to `http://127.0.0.1:8000`, but `memoryService.endpoint` and `OPENCODE_MEMORY_ENDPOINT` let you target any reachable HTTP deployment.
 
 </details>
 
@@ -376,49 +434,31 @@ Export memories from mcp-memory-service → Import to shodh-cloudflare → Sync 
 ---
 
 
-## Latest Release: **v10.31.2** (April 3, 2026)
+## Latest Release: **v10.39.1** (April 19, 2026)
 
-**fix: storage consistency, error handling, and upload progress (community PRs #648, #649, #650)**
+**hotfix: plugin.json author field format — unblocks `/plugin install mcp-memory-service`**
 
 **What's New:**
-- **Consistent `_safe_json_loads` usage (#648)**: Replaced remaining bare `json.loads` calls in `get_largest_memories()` and `get_graph_visualization_data()` with the `_safe_json_loads` helper for consistent error handling.
-- **Non-JSON error response handling (#649)**: HTTP client and embedding API now gracefully handle non-JSON error responses (e.g. HTML from reverse proxies) instead of crashing.
-- **Upload progress tracking (#650)**: Fixed broken single-file progress formula and added per-file batch progress updates for smooth 0→100% tracking.
-- **Repo & agent cleanup**: Moved 8 legacy docs to archive, cleaned up `.claude/` config, consolidated agents (84% size reduction: 2,507 → 412 lines).
-- **1,503 tests** passing.
-
-Thanks to @lawrence3699 for contributing PRs #648, #649, and #650!
+- **Hotfix for v10.39.0 plugin install**: `plugin.json` `author` field now uses the required object format (`{"name": "..."}`) instead of a string. Users who hit `Validation errors: author: Invalid input: expected object, received string` on `/plugin install mcp-memory-service` should upgrade to v10.39.1. Thanks @yingzhi0808 for the report (#738) and fix (#739).
+- **1,547 Python tests** passing.
 
 ---
 
 **Previous Releases**:
-- **v10.31.1** - fix: tombstone blocks re-insertion after delete of same content (#644) — `_purge_tombstone()` before INSERT (1,521 tests)
-- **v10.31.0** - feat: Harvest Evolution (P4) + Sync-in-Async Refactoring — harvest dedup via `update_memory_versioned()`, `asyncio.to_thread()` in `_execute_with_retry` (1,520 tests)
-- **v10.30.0** - feat: Memory Evolution (P1+P2+P3) — non-destructive versioned updates, staleness scoring, conflict detection + resolution (1,514 tests)
-- **v10.29.1** - fix: clean up orphaned graph edges on memory deletion — cascade edge removal in delete/delete_by_tag/delete_by_tags + periodic orphan pruning in consolidation
-- **v10.29.0** - feat(harvest): LLM-based classification via Groq (Phase 2, #628) — `memory_harvest` supports `use_llm=true` for higher-precision category labels via _GroqClassifierBridge
-- **v10.28.5** - Bug fix: MCP_ALLOW_ANONYMOUS_ACCESS=true now respected in the dashboard (anonymous users granted read+write scope)
-- **v10.28.4** - Security patch: cryptography>=46.0.6 (CVE-2026-34073), serialize-javascript>=7.0.5 (CVE-2026-34043), CodeQL cleanup
-- **v10.28.3** - HTTP MCP endpoint fix: accept 'content' as alias for 'query' so Claude Code HTTP transport returns results
-- **v10.28.2** - Relationship inference tuning: 93.5% typed labels vs 0.5% before + German language support
-- **v10.28.1** - Harvest false-positive fix: skip system prompts, skill outputs, and long injected content (3 new tests)
-- **v10.28.0** - Session harvest tool (`memory_harvest`): extract learnings from Claude Code transcripts + security dependency updates (#614-#616)
-- **v10.27.0** - External embedding compatibility fix (missing `index` field, community PR #612) + Docker/Cloudflare deployment docs
-- **v10.26.8** - 6 bug fixes in consolidation, embeddings, and memory types (#603-#608)
-- **v10.26.7** - Cloudflare D1 fresh-database schema initialization fix (issue #600), community contribution by @Lyt060814
-- **v10.26.6** - Security patch: authlib>=1.6.9, PyJWT>=2.12.0, pypdf>=6.9.1 (5 Dependabot alerts: 1 critical, 3 high, 1 medium)
-- **v10.26.5** - Security patch: black dev dependency bumped to >=26.3.1 (GHSA-3936-cmfr-pm3m, CVE-2026-32274, path traversal)
-- **v10.26.4** - FTS5 hybrid search fix on upgrade + dashboard auth lifecycle fixes (9 bugs)
-- **v10.26.3** - Dashboard metadata display fixes + quality scorer resilience (Groq 429 fallback chain, empty-query absolute prompt)
-- **v10.26.2** - OAuth public PKCE client fix (token exchange 500 error, issue #576) + automated CHANGELOG housekeeping
-- **v10.26.1** - Hybrid backend correctly reported in MCP health checks (`HealthCheckFactory` structural detection fix for wrapped/delegated backends, issue #570)
-- **v10.26.0** - Credentials tab + Settings restructure + Sync Owner selector in dashboard; `MCP_HYBRID_SYNC_OWNER=http` recommended for hybrid mode
-- **v10.25.3** - Patch release: stdio handshake timeout cap, syntax fixes, hybrid sync fix, dashboard version badge fix
-- **v10.25.2** - Patch fix: `update_and_restart.sh` health check reads `status` field instead of removed `version` field
-- **v10.25.1** - Security: CORS wildcard default changed to localhost-only, soft-delete leak in `search_by_tag_chronological()` fixed (GHSA-g9rg-8vq5-mpwm)
-- **v10.25.0** - Embedding migration script, 5 soft-delete leak fixes, cosine distance formula fix, substring tag matching fix, O(n²) association sampling fix — 23 new tests, 1,420 total
+- **v10.39.0** - feat: Claude Code plugin install (`/plugin marketplace add doobidoo/mcp-memory-service`) + MemoryClient.storeMemory() protocol-native writes (PRs #736, #735)
+- **v10.38.4** - fix(mcp): return HTTP 202 for JSON-RPC notifications — fixes Codex/strict-client handshake (PR #733)
+- **v10.38.3** - fix: Server tab auto-check, list_memories total_pages, knowledge graph edge rendering (PRs #728, #731, #730)
+- **v10.38.2** - fix(windows): PS 7+ cert bypass, per-call SkipCertificateCheck, chicken-egg lib sourcing (PR #723)
+- **v10.38.1** - fix: OAuth loopback ports (RFC 8252), CLI ingestion NameError, SSE CLI flags, Docker CI bumps (PRs #697, #704, #705, #707-709)
+- **v10.38.0** - feat: opt-in Claude Code SessionEnd auto-harvest hook — safe-by-default, zero npm deps, 5s timeout, TLS opt-in (PR #711, 1,547 tests)
+- **v10.37.0** - feat: `POST /api/harvest` HTTP endpoint for Session Harvest + CodeQL path-injection hardening (PR #710, 1,547 tests)
+- **v10.36.8** - fix: event-loop blocking paths in `SqliteVecMemoryStorage.initialize()` — pragma application and hash-embedding fallback now run in worker thread under `_conn_lock` (PR #700, 1,537 tests)
+- **v10.36.7** - security: bump pygments to 2.20.0 (CVE-2026-4539/GHSA-5239-wwwm-4pmq) — ReDoS fix via rich transitive dep (PR #698, 1,537 tests)
+- **v10.36.6** - security: bump cryptography to 46.0.7 (CVE-2026-39892) — buffer overflow fix in non-contiguous buffer handling (PR #690, 1,537 tests)
+- **v10.36.5** - fix: Cloudflare Vectorize API v1 to v2 + test script fixes — fixed error 1010 "incorrect_api_version", content_hash arg, sys.path correction (PR #689, @mychaelgo, 1,537 tests)
+- **v10.36.4** - fix(windows): hotfix for Get-McpApiKey returning first char instead of full API key — PowerShell array-enumeration trap fixed (PR #687, 1,537 tests)
 
-**Full version history**: [CHANGELOG.md](CHANGELOG.md) | [Older versions (v10.22.0 and earlier)](docs/archive/CHANGELOG-HISTORIC.md) | [All Releases](https://github.com/doobidoo/mcp-memory-service/releases)
+**Full version history**: [CHANGELOG.md](CHANGELOG.md) | [Older versions (v10.36.3 and earlier)](docs/archive/CHANGELOG-HISTORIC.md) | [All Releases](https://github.com/doobidoo/mcp-memory-service/releases)
 
 ---
 
@@ -503,7 +543,18 @@ result = storage.find_connected(
 
 ### Retrieval Benchmarks
 
-Two benchmarks measure retrieval quality (all-MiniLM-L6-v2, 384d embeddings):
+Three benchmarks measure retrieval quality (all-MiniLM-L6-v2, 384d embeddings, zero LLM API calls):
+
+**LongMemEval** ([500 questions](https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned), ~45–62 distractor sessions per question):
+
+| Question Type | R@5 | R@10 | NDCG@10 | MRR |
+|---------------|-----|------|---------|-----|
+| **Overall** | **80.4%** | **90.4%** | **82.2%** | **89.1%** |
+| single-session-assistant | 100.0% | 100.0% | 99.3% | 99.1% |
+| knowledge-update | 84.6% | 96.8% | 86.2% | 95.5% |
+| single-session-user | 91.4% | 92.9% | 86.0% | 83.8% |
+| temporal-reasoning | 72.0% | 84.1% | 75.1% | 85.7% |
+| multi-session | 70.7% | 86.0% | 77.6% | 89.4% |
 
 **DevBench** (practical developer workflow queries):
 
@@ -522,7 +573,7 @@ Two benchmarks measure retrieval quality (all-MiniLM-L6-v2, 384d embeddings):
 | multi-hop | 72.0% | 0.600 |
 | temporal | 33.5% | 0.274 |
 
-Run benchmarks: `python scripts/benchmarks/benchmark_devbench.py` and `python scripts/benchmarks/benchmark_locomo.py`
+Run benchmarks: `python scripts/benchmarks/benchmark_longmemeval.py`, `python scripts/benchmarks/benchmark_devbench.py`, `python scripts/benchmarks/benchmark_locomo.py`
 
 ### Performance Improvements
 
@@ -548,14 +599,15 @@ If you encounter issues during migration:
 ## 📚 Documentation & Resources
 
 - **[Agent Integration Guides](docs/agents/)** 🆕 – LangGraph, CrewAI, AutoGen, HTTP generic
+- **[OpenCode Integration](opencode/README.md)** 🆕 – Local plugin for memory retrieval and context injection
 - **[Remote MCP Setup (claude.ai)](docs/remote-mcp-setup.md)** 🆕 – Browser integration via HTTPS + OAuth
-- **[Installation Guide](docs/installation.md)** – Detailed setup instructions
+- **[Setup Guide](docs/setup-guide.md)** – Decision tree + step-by-step paths for all use cases
 - **[Configuration Guide](docs/mastery/configuration-guide.md)** – Backend options and customization
 - **[Architecture Overview](docs/architecture.md)** – How it works under the hood
-- **[Team Setup Guide](docs/teams.md)** – OAuth and cloud collaboration
+- **[Team Setup Guide](docs/setup-guide.md#path-4-full-stack)** – OAuth and cloud collaboration
 - **[Knowledge Graph Dashboard](docs/features/knowledge-graph-dashboard.md)** 🆕 – Interactive graph visualization guide
 - **[Troubleshooting](docs/troubleshooting/)** – Common issues and solutions
-- **[API Reference](docs/api.md)** – Programmatic usage
+- **[API Reference](https://github.com/doobidoo/mcp-memory-service/wiki)** – Programmatic usage
 - **[Wiki](https://github.com/doobidoo/mcp-memory-service/wiki)** – Complete documentation
 - [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/doobidoo/mcp-memory-service) – AI-powered documentation assistant
 - **[MCP Starter Kit](https://kruppster57.gumroad.com/l/glbhd)** – Build your own MCP server using the patterns from this project

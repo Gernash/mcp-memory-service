@@ -563,6 +563,10 @@ MDNS_DISCOVERY_TIMEOUT = safe_get_int_env('MCP_MDNS_DISCOVERY_TIMEOUT', 5, min_v
 PEER_VERIFY_SSL = os.getenv('MCP_PEER_VERIFY_SSL', 'true').lower() == 'true'
 PEER_SSL_CA_FILE = os.getenv('MCP_PEER_SSL_CA_FILE', None)
 
+# MCP Transport (SSE / Streamable HTTP) Timeout Configuration
+MCP_TRANSPORT_TIMEOUT_KEEP_ALIVE = safe_get_int_env('MCP_TRANSPORT_TIMEOUT_KEEP_ALIVE', 5, min_value=1, max_value=600)
+MCP_TRANSPORT_TIMEOUT_GRACEFUL_SHUTDOWN = safe_get_int_env('MCP_TRANSPORT_TIMEOUT_GRACEFUL_SHUTDOWN', 30, min_value=1, max_value=300)
+
 # Database path for HTTP interface (use SQLite-vec by default)
 if (STORAGE_BACKEND in ['sqlite_vec', 'hybrid']) and SQLITE_VEC_PATH:
     DATABASE_PATH = SQLITE_VEC_PATH
@@ -717,6 +721,15 @@ if CONSOLIDATION_ENABLED:
 
 # OAuth 2.1 Configuration
 OAUTH_ENABLED = safe_get_bool_env('MCP_OAUTH_ENABLED', False)
+
+# DCR Registration Key (optional endpoint protection for /oauth/register)
+# WARNING: RFC 7591 DCR is intentionally open by design to allow dynamic clients.
+# Setting this key restricts registration to callers who supply
+# Authorization: Bearer <key>. Use only for self-hosted deployments where open
+# registration is unacceptable (e.g., internet-facing instances without VPN).
+# Leave unset (default) to preserve standard RFC 7591 open-registration behavior.
+# Rotate via your secret manager; the service reads the env var on each request.
+DCR_REGISTRATION_KEY: str | None = os.getenv('MCP_DCR_REGISTRATION_KEY')
 
 # OAuth Storage Backend Configuration
 OAUTH_STORAGE_BACKEND = os.getenv("MCP_OAUTH_STORAGE_BACKEND", "memory").lower()

@@ -12,7 +12,12 @@ class MemoryDashboard {
     // Static configuration for settings modal system information
     static SYSTEM_INFO_CONFIG = {
         settingsVersion: {
-            sources: [{ path: 'version', api: 'health' }],
+            // Since v10.21.0 (GHSA-73hc-m4hx-79pj), /api/health no longer
+            // returns version/uptime/timestamp as a defense-in-depth measure
+            // against info disclosure. The version is only exposed via the
+            // authenticated /api/health/detailed endpoint, which is already
+            // fetched by loadSystemInfo().
+            sources: [{ path: 'version', api: 'detailedHealth' }],
             formatter: (value) => value || 'N/A'
         },
         settingsBackend: {
@@ -847,7 +852,9 @@ class MemoryDashboard {
     }
 
     /**
-     * Load application version from health endpoint
+     * Load application version from the authenticated /health/detailed endpoint.
+     * Note: /health is intentionally minimal since v10.21.0 (GHSA-73hc-m4hx-79pj)
+     * and no longer exposes version information without authentication.
      */
     async loadVersion() {
         try {
@@ -4386,6 +4393,16 @@ class MemoryDashboard {
         // Load credentials when switching to credentials tab
         if (tabName === 'credentials') {
             this.loadCredentials();
+        }
+
+        // Load server status + auto-check for updates when switching to server tab
+        // (runs once per modal open to avoid repeated git fetches)
+        if (tabName === 'server') {
+            this.loadServerStatus();
+            if (!this._serverUpdateChecked) {
+                this._serverUpdateChecked = true;
+                this.checkForUpdates();
+            }
         }
     }
 

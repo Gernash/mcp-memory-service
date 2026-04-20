@@ -1,0 +1,98 @@
+name: Deploy Landing Page to here.now
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/index.html'
+      - 'docs/brain-icon.png'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Publish to here.now
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Compute file metadata
+      id: meta
+      run: |
+        HTML_SIZE=$(stat -c%s docs/index.html)
+        HTML_HASH=$(sha256sum docs/index.html | cut -d' ' -f1)
+        ICON_SIZE=$(stat -c%s docs/brain-icon.png)
+        ICON_HASH=$(sha256sum docs/brain-icon.png | cut -d' ' -f1)
+        echo "html_size=$HTML_SIZE" >> "$GITHUB_OUTPUT"
+        echo "html_hash=$HTML_HASH" >> "$GITHUB_OUTPUT"
+        echo "icon_size=$ICON_SIZE" >> "$GITHUB_OUTPUT"
+        echo "icon_hash=$ICON_HASH" >> "$GITHUB_OUTPUT"
+
+    - name: Update site on here.now
+      env:
+        HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+        HTML_SIZE: ${{ steps.meta.outputs.html_size }}
+        HTML_HASH: ${{ steps.meta.outputs.html_hash }}
+        ICON_SIZE: ${{ steps.meta.outputs.icon_size }}
+        ICON_HASH: ${{ steps.meta.outputs.icon_hash }}
+      run: |
+        set -e
+
+        SLUG="merry-realm-j835"
+
+        echo "Publishing landing page (index.html: ${HTML_SIZE}b, brain-icon.png: ${ICON_SIZE}b)"
+
+        # Update existing site with both files
+        RESPONSE=$(curl -sS -X PUT "https://here.now/api/v1/publish/${SLUG}" \
+          -H "Authorization: Bearer ${HERENOW_API_KEY}" \
+          -H "X-HereNow-Client: github-actions/deploy-herenow" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"files\": [
+              {
+                \"path\": \"index.html\",
+                \"size\": ${HTML_SIZE},
+                \"contentType\": \"text/html; charset=utf-8\",
+                \"hash\": \"${HTML_HASH}\"
+              },
+              {
+                \"path\": \"brain-icon.png\",
+                \"size\": ${ICON_SIZE},
+                \"contentType\": \"image/png\",
+                \"hash\": \"${ICON_HASH}\"
+              }
+            ]
+          }")
+
+        VERSION_ID=$(echo "$RESPONSE" | jq -r '.upload.versionId')
+        FINALIZE_URL=$(echo "$RESPONSE" | jq -r '.upload.finalizeUrl')
+        UPLOAD_COUNT=$(echo "$RESPONSE" | jq -r '.upload.uploads | length')
+
+        echo "Version: ${VERSION_ID}, files to upload: ${UPLOAD_COUNT}"
+
+        # Upload each file that wasn't skipped
+        for i in $(seq 0 $((UPLOAD_COUNT - 1))); do
+          FILE_PATH=$(echo "$RESPONSE" | jq -r ".upload.uploads[$i].path")
+          UPLOAD_URL=$(echo "$RESPONSE" | jq -r ".upload.uploads[$i].url")
+          CONTENT_TYPE=$(echo "$RESPONSE" | jq -r ".upload.uploads[$i].headers[\"Content-Type\"]")
+
+          echo "Uploading ${FILE_PATH}..."
+          curl -sS -X PUT "${UPLOAD_URL}" \
+            -H "Content-Type: ${CONTENT_TYPE}" \
+            --data-binary "@docs/${FILE_PATH}"
+        done
+
+        # Finalize
+        echo "Finalizing..."
+        FINALIZE=$(curl -sS -X POST "${FINALIZE_URL}" \
+          -H "Authorization: Bearer ${HERENOW_API_KEY}" \
+          -H "Content-Type: application/json" \
+          -d "{\"versionId\": \"${VERSION_ID}\"}")
+
+        SITE_URL=$(echo "$FINALIZE" | jq -r '.siteUrl // empty')
+        if [ -n "$SITE_URL" ]; then
+          echo "Deployed to ${SITE_URL}"
+        else
+          echo "Finalize failed:"
+          echo "$FINALIZE"
+          exit 1
+        fi

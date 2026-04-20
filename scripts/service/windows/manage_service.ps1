@@ -41,12 +41,22 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Load shared server-config helper (reads host/port/https from .env)
+. "$PSScriptRoot\lib\server-config.ps1"
+$ServerConfig = Get-McpServerConfig
+Enable-McpSelfSignedCertBypass
+# Per-call extras (adds -SkipCertificateCheck on PS 7+ with HTTPS) because
+# Invoke-WebRequest on PS 7+ uses HttpClient which ignores ServicePointManager.
+$McpWebExtras = Get-McpWebRequestExtraParams -HttpsEnabled $ServerConfig.HttpsEnabled
+
 # Configuration
 $TaskName = "MCPMemoryHTTPServer"
 $LogFile = Join-Path $env:LOCALAPPDATA "mcp-memory\logs\http-server.log"
 $PidFile = Join-Path $env:LOCALAPPDATA "mcp-memory\http-server.pid"
-# HTTP server (default configuration — no TLS)
-$HealthUrl = "http://127.0.0.1:8000/api/health"
+# Derived from .env — supports both HTTP and HTTPS, any port
+$HealthUrl = $ServerConfig.HealthUrl
+$DashboardUrl = $ServerConfig.DashboardUrl
+$ServerPort = $ServerConfig.Port
 
 function Show-Help {
     Write-Host ""
@@ -92,7 +102,7 @@ function Get-ServerStatus {
         }
     }
 
-    # Check HTTP health
+    # Check HTTP health (public, no auth — fast liveness check)
     $HttpHealthy = $false
     $HealthResponse = $null
     try {
@@ -101,7 +111,7 @@ function Get-ServerStatus {
             TimeoutSec = 3
             UseBasicParsing = $true
             ErrorAction = 'SilentlyContinue'
-        }
+        } + $McpWebExtras
         $Response = Invoke-WebRequest @params
         if ($Response.StatusCode -eq 200) {
             $HttpHealthy = $true
@@ -111,6 +121,34 @@ function Get-ServerStatus {
         # Server not responding
     }
 
+    # Fetch version + backend from the authenticated /api/health/detailed
+    # endpoint. The public /api/health response only contains status since the
+    # v10.21.0 security hardening (GHSA-73hc-m4hx-79pj), so the human-readable
+    # status display needs the authenticated endpoint for version/backend.
+    # Degrades gracefully if MCP_API_KEY is not set in .env.
+    $DetailedHealth = $null
+    if ($HttpHealthy) {
+        $ApiKey = Get-McpApiKey
+        if ($ApiKey) {
+            try {
+                $DetailedUrl = "$($ServerConfig.BaseUrl)/api/health/detailed"
+                $detailedParams = @{
+                    Uri = $DetailedUrl
+                    Headers = @{ "Authorization" = "Bearer $ApiKey" }
+                    TimeoutSec = 3
+                    UseBasicParsing = $true
+                    ErrorAction = 'SilentlyContinue'
+                } + $McpWebExtras
+                $DetailedResponse = Invoke-WebRequest @detailedParams
+                if ($DetailedResponse.StatusCode -eq 200) {
+                    $DetailedHealth = $DetailedResponse.Content | ConvertFrom-Json
+                }
+            } catch {
+                # /health/detailed unreachable — keep fields empty, don't fail status
+            }
+        }
+    }
+
     return @{
         Task = $Task
         TaskInfo = $TaskInfo
@@ -118,6 +156,7 @@ function Get-ServerStatus {
         ProcessPid = $ProcessPid
         HttpHealthy = $HttpHealthy
         HealthResponse = $HealthResponse
+        DetailedHealth = $DetailedHealth
     }
 }
 
@@ -170,10 +209,24 @@ function Show-Status {
     if ($Status.HttpHealthy) {
         Write-Host "  Status:  " -NoNewline
         Write-Host "HEALTHY" -ForegroundColor Green
-        Write-Host "  URL:     http://127.0.0.1:8000/"
-        if ($Status.HealthResponse) {
-            Write-Host "  Version: $($Status.HealthResponse.version)"
-            Write-Host "  Backend: $($Status.HealthResponse.storage_backend)"
+        Write-Host "  URL:     $DashboardUrl"
+        # Version + backend come from /api/health/detailed (authenticated).
+        # Public /api/health has not exposed these since v10.21.0.
+        if ($Status.DetailedHealth) {
+            $backendValue = $null
+            if ($Status.DetailedHealth.storage) {
+                # 'backend' is the canonical field per DetailedHealthResponse schema.
+                # 'storage_backend' may appear in backend-specific stats as a fallback.
+                $backendValue = $Status.DetailedHealth.storage.backend
+                if (-not $backendValue) {
+                    $backendValue = $Status.DetailedHealth.storage.storage_backend
+                }
+            }
+            Write-Host "  Version: $($Status.DetailedHealth.version)"
+            Write-Host "  Backend: $backendValue"
+        } else {
+            Write-Host "  Version: (unavailable - set MCP_API_KEY in .env for details)" -ForegroundColor DarkGray
+            Write-Host "  Backend: (unavailable - set MCP_API_KEY in .env for details)" -ForegroundColor DarkGray
         }
     } else {
         Write-Host "  Status: " -NoNewline
@@ -220,11 +273,11 @@ function Start-Server {
                 TimeoutSec = 2
                 UseBasicParsing = $true
                 ErrorAction = 'SilentlyContinue'
-            }
+            } + $McpWebExtras
             $Response = Invoke-WebRequest @params
             if ($Response.StatusCode -eq 200) {
                 Write-Host "[SUCCESS] Server started successfully!" -ForegroundColor Green
-                Write-Host "Dashboard: http://127.0.0.1:8000/" -ForegroundColor Cyan
+                Write-Host "Dashboard: $DashboardUrl" -ForegroundColor Cyan
                 return
             }
         } catch {
@@ -256,9 +309,9 @@ function Stop-Server {
         Stop-Process -Id $Status.ProcessPid -Force -ErrorAction SilentlyContinue
     }
 
-    # Also try via port
+    # Also try via port (from .env)
     try {
-        $Connection = Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" }
+        $Connection = Get-NetTCPConnection -LocalPort $ServerPort -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" }
         if ($Connection) {
             Stop-Process -Id $Connection.OwningProcess -Force -ErrorAction SilentlyContinue
         }
@@ -299,7 +352,7 @@ function Check-Health {
             Uri = $HealthUrl
             TimeoutSec = 5
             UseBasicParsing = $true
-        }
+        } + $McpWebExtras
         $Response = Invoke-WebRequest @params
         Write-Host "[SUCCESS] Server is healthy!" -ForegroundColor Green
         Write-Host ""
